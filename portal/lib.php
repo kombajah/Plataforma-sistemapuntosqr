@@ -1,0 +1,133 @@
+<?php
+// Funciones del portal: aprovisionamiento de colegios (una BD por instalación), estadísticas y claves.
+require_once __DIR__ . '/../paginas/branding.php';
+
+function portal_prefijo_bd(): string {
+  $p = preg_replace('/[^a-z0-9_]/', '', strtolower(env('TENANT_DB_PREFIX', 'nfc_')));
+  return $p === '' ? 'nfc_' : $p;
+}
+function portal_nombre_bd(string $slug): string { return portal_prefijo_bd() . str_replace('-', '_', $slug); }
+
+// Clave legible y segura: 12 caracteres sin ambiguos (0/O, 1/l/I), en grupos XXXX-XXXX-XXXX.
+function generar_clave(): string {
+  $abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; $n = strlen($abc); $o = '';
+  for ($i = 0; $i < 12; $i++) { $o .= $abc[random_int(0, $n - 1)]; if ($i % 4 === 3 && $i < 11) $o .= '-'; }
+  return $o;
+}
+function usuario_valido(string $u): bool { return (bool)preg_match('/^[A-Za-z0-9._-]{3,50}$/', $u); }
+function ahora(): string { return date('Y-m-d H:i:s'); }
+
+function portal_instalacion_de_admin($master, int $adminId): ?array {
+  $s = $master->prepare("SELECT * FROM portal_instalaciones WHERE admin_id=?"); $s->bind_param("i", $adminId); $s->execute();
+  return $s->get_result()->fetch_assoc() ?: null;
+}
+
+// Ejecuta el contenido de un .sql con varias sentencias.
+function ejecutar_sql_multiple(mysqli $c, string $sql): void {
+  $c->multi_query($sql);
+  do { if ($r = $c->store_result()) $r->free(); } while ($c->more_results() && $c->next_result());
+}
+
+// ---------------------------------------------------------------------------------------
+// Crea la base de datos del colegio, le aplica el esquema y guarda configuración, imágenes y
+// el usuario administrador. Si algo falla después de crear la BD, la elimina (sin dejar basura).
+// $admin: fila de portal_admins. $hashAdmin: hash de la contraseña con que quedará en el colegio.
+// ---------------------------------------------------------------------------------------
+function provisionar_colegio(mysqli $master, array $inst, array $admin, string $slug, array $cfg, array $imagenes, string $hashAdmin): array {
+  if (!slug_valido($slug)) throw new RuntimeException('El código del colegio no es válido.');
+  $s = $master->prepare("SELECT id FROM portal_instalaciones WHERE slug=?"); $s->bind_param("s", $slug); $s->execute();
+  if ($s->get_result()->fetch_assoc()) throw new RuntimeException('Ese código de colegio ya está en uso. Elige otro.');
+
+  $bd = portal_nombre_bd($slug);
+  $q = $master->prepare("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?"); $q->bind_param("s", $bd); $q->execute();
+  if ($q->get_result()->fetch_assoc()) throw new RuntimeException('Ya existe una base de datos llamada «' . $bd . '». Elige otro código.');
+
+  try {
+    $master->query("CREATE DATABASE `$bd` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+  } catch (mysqli_sql_exception $e) {
+    throw new RuntimeException('No se pudo crear la base de datos del colegio. El usuario de base de datos (DB_USER) necesita permiso CREATE sobre «' . $bd . '». Detalle: ' . $e->getMessage());
+  }
+
+  $t = null;
+  try {
+    $t = db_abrir($bd);
+    $sql = file_get_contents(__DIR__ . '/../sql/tenant_schema.sql');
+    ejecutar_sql_multiple($t, $sql);
+
+    foreach ($cfg as $k => $v) brand_guardar_clave($t, $k, (string)$v);
+    foreach ($imagenes as $k => [$mime, $bin]) brand_guardar_recurso($t, $k, $mime, $bin);
+    if ($imagenes) brand_guardar_clave($t, 'img_ver', (string)time());
+
+    $nom = $admin['nombre']; $ape = ''; $usr = $admin['usuario'];
+    $a = $t->prepare("INSERT INTO maestros (nombre,apellido,usuario,password,rol) VALUES (?,?,?,?,'admin')");
+    $a->bind_param("ssss", $nom, $ape, $usr, $hashAdmin); $a->execute();
+
+    $f = ahora(); $nombre = $cfg['nombre_colegio']; $iid = (int)$inst['id'];
+    $u = $master->prepare("UPDATE portal_instalaciones SET slug=?, nombre_colegio=?, db_name=?, estado='activa', configurada=?, usuarios_count=1, stats_actualizadas=? WHERE id=?");
+    $u->bind_param("sssssi", $slug, $nombre, $bd, $f, $f, $iid); $u->execute();
+  } catch (Throwable $e) {
+    try { $master->query("DROP DATABASE IF EXISTS `$bd`"); } catch (Throwable $e2) {}
+    if ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062) throw new RuntimeException('Ese código de colegio ya está en uso. Elige otro.');
+    throw new RuntimeException('No se pudo crear la instalación: ' . $e->getMessage());
+  }
+  return ['db_name' => $bd, 'conn' => $t];
+}
+
+// Elimina la base de datos del colegio (irreversible).
+function eliminar_bd_colegio(mysqli $master, ?string $bd): void {
+  if (!$bd || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $bd)) return;
+  if (strpos($bd, portal_prefijo_bd()) !== 0) throw new RuntimeException('Nombre de base de datos inesperado; no se eliminó.');
+  $master->query("DROP DATABASE IF EXISTS `$bd`");
+}
+
+// Recalcula y guarda las estadísticas de una instalación leyendo su BD en vivo. Devuelve la fila actualizada.
+function recontar_instalacion(mysqli $master, array $inst): array {
+  if (empty($inst['db_name']) || $inst['estado'] === 'pendiente') return $inst;
+  try {
+    $t = db_abrir($inst['db_name']);
+    $c = contar_tabla($t, 'cursos'); $a = contar_tabla($t, 'alumnos'); $u = contar_tabla($t, 'maestros');
+    $ult = $t->query("SELECT MAX(fecha) f FROM log_sesiones")->fetch_assoc()['f'] ?? null;
+    $q = $master->prepare("SELECT COALESCE(ROUND(SUM(data_length+index_length)/1048576,2),0) mb FROM information_schema.TABLES WHERE table_schema=?");
+    $q->bind_param("s", $inst['db_name']); $q->execute(); $mb = (float)$q->get_result()->fetch_assoc()['mb'];
+    $f = ahora(); $id = (int)$inst['id'];
+    $s = $master->prepare("UPDATE portal_instalaciones SET cursos_count=?, alumnos_count=?, usuarios_count=?, tamano_mb=?, ultimo_acceso_colegio=?, stats_actualizadas=? WHERE id=?");
+    $s->bind_param("iiidssi", $c, $a, $u, $mb, $ult, $f, $id); $s->execute();
+    $t->close();
+    $inst = array_merge($inst, ['cursos_count'=>$c,'alumnos_count'=>$a,'usuarios_count'=>$u,'tamano_mb'=>$mb,'ultimo_acceso_colegio'=>$ult,'stats_actualizadas'=>$f]);
+  } catch (Throwable $e) { /* BD inaccesible: se conservan los últimos valores */ }
+  return $inst;
+}
+
+// Inicia la sesión de un administrador dentro de su colegio (usado tras el login del portal o el asistente).
+function entrar_a_colegio(array $inst, mysqli $t, string $usuario): void {
+  $s = $t->prepare("SELECT id, rol FROM maestros WHERE usuario=?"); $s->bind_param("s", $usuario); $s->execute();
+  $m = $s->get_result()->fetch_assoc();
+  if (!$m) throw new RuntimeException('No se encontró el usuario administrador dentro del colegio.');
+  $_SESSION['maestro'] = $usuario; $_SESSION['id'] = (int)$m['id']; $_SESSION['rol'] = $m['rol']; $_SESSION['tenant'] = $inst['slug'];
+  $GLOBALS['TENANT'] = $inst; $GLOBALS['CFG'] = brand_cargar($t);
+  registrar_login($t, (int)$m['id'], $usuario);
+}
+
+function portal_cerrar_sesion_y_redirigir(string $destino = '/'): void {
+  $_SESSION = [];
+  if (ini_get('session.use_cookies')) {
+    $p = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+  }
+  session_destroy();
+  header('Location: ' . $destino); exit;
+}
+
+// Estilo común (neutro) de las pantallas del portal.
+function portal_head(string $titulo): void { ?>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><?= h($titulo) ?></title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+body{background:#f1f4f8;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#1f2d3d}
+.pt-card{background:#fff;border:1px solid #e3e8ef;border-radius:16px;box-shadow:0 6px 24px #1f2d3d12}
+.pt-brand{background:linear-gradient(135deg,#243b55,#3b6ea5);color:#fff}
+.kpi{border-radius:14px;background:#fff;border:1px solid #e3e8ef;padding:14px 16px}
+.kpi b{font-size:1.7rem;display:block;line-height:1.1}
+</style>
+<?php }

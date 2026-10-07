@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/index.php": { "runtime": "vercel-php@0.7.4" }
+  },
+  "routes": [
+    { "src": "/(paginas|portal|sql)/(.*)", "status": 404 },
+    { "src": "/config\\.local\\.php", "status": 404 },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/api/index.php" }
+  ]
+}
