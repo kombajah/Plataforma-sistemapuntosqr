@@ -45,6 +45,8 @@ $usoC = contar_tabla($conn, 'cursos'); $usoU = contar_tabla($conn, 'maestros');
       <div class="col-6">Cursos: <strong><?= $usoC ?></strong> de <strong><?= $mc > 0 ? $mc : 'sin límite' ?></strong></div>
       <div class="col-6">Usuarios (docentes + admins): <strong><?= $usoU ?></strong> de <strong><?= $mu > 0 ? $mu : 'sin límite' ?></strong></div>
     </div>
+    <?php $dv = dias_restantes($TENANT); ?>
+    <div class="small mt-1">Vigencia: <strong><?= $dv === null ? 'sin vencimiento' : 'hasta el ' . h(date('d-m-Y', strtotime($TENANT['vence']))) . ' (' . ($dv <= 0 ? 'vence hoy' : 'quedan ' . $dv . ' día' . ($dv === 1 ? '' : 's')) . ')' ?></strong></div>
     <div class="small text-muted mt-1">Si necesitas más cupo, solicítalo al administrador del portal.</div>
   </div>
 

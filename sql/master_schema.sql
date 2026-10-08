@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS portal_instalaciones (
   estado ENUM('pendiente','activa','suspendida') NOT NULL DEFAULT 'pendiente',
   max_cursos INT NOT NULL DEFAULT 10,      -- 0 = sin límite
   max_usuarios INT NOT NULL DEFAULT 20,    -- docentes + administradores; 0 = sin límite
+  vence DATETIME NULL,                     -- fin de la vigencia (prueba); NULL = sin vencimiento
   cursos_count INT NOT NULL DEFAULT 0,
   alumnos_count INT NOT NULL DEFAULT 0,
   usuarios_count INT NOT NULL DEFAULT 0,

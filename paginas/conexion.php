@@ -183,6 +183,16 @@ if (!function_exists('docente_id')) {
   function docente_id(){ return (int)($_SESSION['id'] ?? 0); }
 }
 
+// ---------------------------- Vigencia (periodo de prueba) ----------------------------
+if (!function_exists('inst_vencida')) {
+  function inst_vencida($inst){ return !empty($inst['vence']) && strtotime($inst['vence']) < time(); }
+  // Días que quedan (0 = vence hoy). null si no tiene vencimiento. Negativo si ya venció.
+  function dias_restantes($inst){
+    if (empty($inst['vence'])) return null;
+    return (int)floor((strtotime($inst['vence']) - time()) / 86400);
+  }
+}
+
 // ---------------------------- Límites de la instalación (los fija el superadmin) ----------------------------
 if (!function_exists('contar_tabla')) {
   function contar_tabla($conn, $tabla){ return (int)$conn->query("SELECT COUNT(*) t FROM `$tabla`")->fetch_assoc()['t']; }

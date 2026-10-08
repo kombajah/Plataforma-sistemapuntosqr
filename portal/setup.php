@@ -11,6 +11,7 @@ if (!$admin || !$inst) { portal_cerrar_sesion_y_redirigir('/'); }
 
 // Si ya está configurado, va directo a su colegio (la configuración se edita allí).
 if ($inst['estado'] === 'activa') { header('Location: /e/' . $inst['slug'] . '/reporte.php'); exit; }
+if (inst_vencida($inst)) pagina_mensaje('Periodo de prueba vencido', 'Tu periodo de prueba venció el ' . date('d-m-Y', strtotime($inst['vence'])) . '. Contacta al administrador del portal para reactivarlo.', 403);
 if ($inst['estado'] === 'suspendida') pagina_mensaje('Institución suspendida', 'Tu institución está suspendida. Contacta al administrador del portal.', 403);
 
 $cfg = brand_defaults(); $slug = ''; $errores = [];

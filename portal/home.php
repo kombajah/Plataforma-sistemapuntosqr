@@ -40,7 +40,8 @@ if (($_POST['tipo'] ?? '') === 'admin') {
     $ad = $s->get_result()->fetch_assoc();
     if ($ad) {
       $inst = portal_instalacion_de_admin($master, (int)$ad['id']);
-      if ($inst && $inst['estado'] === 'suspendida') { $error = 'Tu institución está suspendida. Contacta al administrador del portal.'; }
+      if ($inst && inst_vencida($inst)) { $error = 'Tu periodo de prueba venció el ' . date('d-m-Y', strtotime($inst['vence'])) . '. Contacta al administrador del portal para reactivarlo.'; }
+      elseif ($inst && $inst['estado'] === 'suspendida') { $error = 'Tu institución está suspendida. Contacta al administrador del portal.'; }
       elseif ($inst && $inst['estado'] === 'activa') {
         // Ya configurado: la fuente de verdad de la contraseña es la BD del colegio.
         try {

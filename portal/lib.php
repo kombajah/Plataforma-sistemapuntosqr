@@ -17,6 +17,19 @@ function generar_clave(): string {
 function usuario_valido(string $u): bool { return (bool)preg_match('/^[A-Za-z0-9._-]{3,50}$/', $u); }
 function ahora(): string { return date('Y-m-d H:i:s'); }
 
+// Agrega columnas nuevas a una BD maestra ya instalada (seguro de repetir).
+function portal_migrar(mysqli $master): void {
+  try {
+    $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='vence'")->fetch_assoc();
+    if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN vence DATETIME NULL AFTER max_usuarios");
+  } catch (Throwable $e) {}
+}
+// Fecha de vencimiento: fin del día, $dias días después de $desde (timestamp). 0 días → null (sin vencimiento).
+function calcular_vence(int $dias, ?int $desde = null): ?string {
+  if ($dias <= 0) return null;
+  return date('Y-m-d 23:59:59', ($desde ?? time()) + $dias * 86400);
+}
+
 function portal_instalacion_de_admin($master, int $adminId): ?array {
   $s = $master->prepare("SELECT * FROM portal_instalaciones WHERE admin_id=?"); $s->bind_param("i", $adminId); $s->execute();
   return $s->get_result()->fetch_assoc() ?: null;

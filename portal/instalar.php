@@ -16,6 +16,7 @@ if ($installKey === '') {
   } else {
     try {
       ejecutar_sql_multiple($master, file_get_contents(__DIR__ . '/../sql/master_schema.sql'));
+      portal_migrar($master);
       $msg = 'Tablas del portal creadas/actualizadas correctamente.';
       $n = contar_tabla($master, 'portal_superadmins');
       if ($n === 0) {

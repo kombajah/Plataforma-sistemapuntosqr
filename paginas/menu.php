@@ -41,6 +41,9 @@ $enMas = isset($secundarios[$act]);
     </div>
   </div>
 </div>
+<?php $drm = dias_restantes($GLOBALS['TENANT']); if (es_admin() && $drm !== null && $drm <= 7): ?>
+<div class="alert alert-warning text-center py-2 mx-3 mb-2 small">⏳ Tu periodo de prueba <?= $drm <= 0 ? 'vence hoy' : 'vence en ' . $drm . ' día' . ($drm === 1 ? '' : 's') ?>. Contacta al administrador del portal para extenderlo.</div>
+<?php endif; ?>
 <div class="text-center pb-3">
   <span class="badge rounded-pill" style="background:#ffffff; color:var(--forest-primary-dark); border: 1px solid var(--forest-primary-dark); font-size:.85rem; padding:6px 14px">
     👋 Usuario: <strong><?= h($_SESSION['maestro']) ?></strong> · <?= es_admin()?'Administrador':'Docente' ?>

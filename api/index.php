@@ -23,6 +23,8 @@ if (preg_match('#^/e/([a-z0-9][a-z0-9-]{1,28}[a-z0-9])(/.*)?$#', $ruta, $m)) {
   if (!$TENANT || $TENANT['estado'] === 'pendiente') pagina_mensaje('Colegio no encontrado', 'No existe un colegio con el código «' . $slug . '». Revisa la dirección.', 404);
   if ($TENANT['estado'] === 'suspendida') pagina_mensaje('Servicio suspendido', 'El acceso de este colegio está suspendido temporalmente. Contacta al administrador del portal.', 503);
 
+  if (inst_vencida($TENANT)) pagina_mensaje('Periodo de prueba vencido', 'La vigencia de este colegio terminó el ' . date('d-m-Y', strtotime($TENANT['vence'])) . '. Contacta al administrador del portal para reactivarla.', 403);
+
   try { $conn = db_abrir($TENANT['db_name']); }
   catch (mysqli_sql_exception $e) { pagina_mensaje('Base de datos no disponible', 'No se pudo abrir la base de datos de este colegio. Inténtalo más tarde.', 500); }
 
