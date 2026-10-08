@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Portal Sistema de Puntos NFC/QR — multi-colegio
 
 Versión genérica (sin marca de ningún colegio) del sistema de puntos por asignatura/curso con NFC o QR.
@@ -41,3 +42,7 @@ Se validan en el servidor (crear curso, carga masiva CSV, crear maestro). Los co
 - Eliminar una instalación desde el panel ejecuta `DROP DATABASE` (pide escribir el código para confirmar).
 - Los QR de apoderados llevan el código del colegio en la URL (`/e/{codigo}/reporte_apoderado.php?token=…`).
 - Intentos de login: bloqueo de 15 min tras 8 fallos (por usuario + IP) en portal y colegios.
+=======
+# Plataforma-sistemapuntosqr
+Portal multiescuela con configuración dinámica
+>>>>>>> 45f7da7f616261605fdda9258f6f8149732bb046
