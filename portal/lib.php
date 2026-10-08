@@ -24,6 +24,8 @@ function portal_migrar(mysqli $master): void {
     if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN vence DATETIME NULL AFTER max_usuarios");
     $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='es_demo'")->fetch_assoc();
     if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN es_demo TINYINT(1) NOT NULL DEFAULT 0 AFTER max_usuarios");
+    $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='descripcion'")->fetch_assoc();
+    if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN descripcion VARCHAR(255) NULL AFTER max_usuarios");
   } catch (Throwable $e) {}
 }
 // Fecha de vencimiento: fin del día, $dias días después de $desde (timestamp). 0 días → null (sin vencimiento).
