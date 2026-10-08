@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $nom = mb_substr(trim($_POST['nombre'] ?? ''), 0, 100); $email = mb_substr(trim($_POST['email'] ?? ''), 0, 150);
       $usr = trim($_POST['usuario'] ?? '');
       $mc = max(0, (int)($_POST['max_cursos'] ?? 10)); $mu = max(0, (int)($_POST['max_usuarios'] ?? 20));
-      $dias = min(3650, max(0, (int)($_POST['dias_vigencia'] ?? 0))); $vence = calcular_vence($dias);
+      $dias = min(3650, max(0, (int)($_POST['dias_vigencia'] ?? 0))); $vence = calcular_vence($dias); $demo = !empty($_POST['es_demo']) ? 1 : 0;
       if ($nom === '') volver(null, 'Escribe el nombre de la persona.');
       if (!usuario_valido($usr)) volver(null, 'Usuario no válido (3-50 caracteres: letras, números, . _ -).');
       if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) volver(null, 'Correo no válido.');
@@ -34,9 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $clave = generar_clave(); $hash = password_hash($clave, PASSWORD_DEFAULT); $f = ahora();
       $s = $master->prepare("INSERT INTO portal_admins (nombre,email,usuario,password,creado,creado_por) VALUES (?,?,?,?,?,?)");
       $s->bind_param("ssssss", $nom, $email, $usr, $hash, $f, $yo); $s->execute(); $aid = (int)$master->insert_id;
-      $s = $master->prepare("INSERT INTO portal_instalaciones (admin_id,max_cursos,max_usuarios,vence,creada) VALUES (?,?,?,?,?)");
-      $s->bind_param("iiiss", $aid, $mc, $mu, $vence, $f); $s->execute();
-      auditar($yo, 'admin_creado', "$usr ($nom) cursos=$mc usuarios=$mu vigencia=" . ($dias ? "$dias días" : 'sin vencimiento'));
+      $s = $master->prepare("INSERT INTO portal_instalaciones (admin_id,max_cursos,max_usuarios,vence,es_demo,creada) VALUES (?,?,?,?,?,?)");
+      $s->bind_param("iiisis", $aid, $mc, $mu, $vence, $demo, $f); $s->execute();
+      auditar($yo, 'admin_creado', "$usr ($nom) cursos=$mc usuarios=$mu vigencia=" . ($dias ? "$dias días" : 'sin vencimiento') . ($demo ? ' DEMO' : ''));
       $_SESSION['credenciales'] = ['usuario' => $usr, 'clave' => $clave, 'nombre' => $nom, 'nuevo' => true];
       volver();
 
@@ -49,16 +49,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } elseif ($a === 'vigencia') {
       $i = cargar_inst($master, (int)$_POST['id']); if (!$i) volver(null, 'Instalación no encontrada.');
-      $dias = min(3650, max(0, (int)($_POST['dias'] ?? 0)));
+      $dias = min(3650, max(0, (int)($_POST['dias'] ?? 0))); $demo = !empty($_POST['es_demo']) ? 1 : 0;
       if (!empty($_POST['sin_vencimiento'])) { $nuevo = null; }
+      elseif ($dias < 1) { $nuevo = $i['vence'] ?: null; }   // 0 días: no se cambia la fecha (sirve para marcar/desmarcar demo)
       else {
-        if ($dias < 1) volver(null, 'Indica cuántos días agregar (mínimo 1) o marca «Sin vencimiento».');
         // Si aún está vigente se suma al vencimiento actual; si ya venció (o no tenía) se cuenta desde hoy.
         $base = (!empty($i['vence']) && strtotime($i['vence']) > time()) ? strtotime($i['vence']) : time();
         $nuevo = calcular_vence($dias, $base);
       }
-      $s = $master->prepare("UPDATE portal_instalaciones SET vence=? WHERE id=?"); $s->bind_param("si", $nuevo, $i['id']); $s->execute();
-      auditar($yo, 'vigencia', ($i['slug'] ?: $i['usuario']) . ' → ' . ($nuevo ?: 'sin vencimiento'));
+      $s = $master->prepare("UPDATE portal_instalaciones SET vence=?, es_demo=? WHERE id=?"); $s->bind_param("sii", $nuevo, $demo, $i['id']); $s->execute();
+      auditar($yo, 'vigencia', ($i['slug'] ?: $i['usuario']) . ' → ' . ($nuevo ?: 'sin vencimiento') . ($demo ? ' (demo)' : ''));
       volver('Vigencia actualizada: ' . ($nuevo ? 'hasta el ' . date('d-m-Y', strtotime($nuevo)) : 'sin vencimiento') . '.');
 
     } elseif ($a === 'estado') {
@@ -183,6 +183,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
       <div class="col-md-3"><label class="small text-muted">Máx. usuarios (0 = sin límite)</label><input type="number" min="0" name="max_usuarios" class="form-control" value="20"></div>
       <div class="col-md-3"><label class="small text-muted">Vigencia en días (0 = sin vencimiento)</label><input type="number" min="0" max="3650" name="dias_vigencia" class="form-control" value="30"></div>
       <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100">Crear y generar clave</button></div>
+      <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="es_demo" value="1" id="nuevo_demo"><label class="form-check-label" for="nuevo_demo"><strong>Versión demo</strong> <span class="text-muted small">— el sitio mostrará un aviso de «versión de prueba» con los días de vigencia que quedan (en el pie de página y en una ventana al iniciar sesión).</span></label></div></div>
     </form>
   </div>
 
@@ -208,7 +209,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
         <td><?= $conf ? h(number_format((float)$f['tamano_mb'], 2)) . ' MB' : '—' ?></td>
         <td><span class="badge text-bg-<?= $badge[$f['estado']] ?>"><?= h($f['estado']) ?></span>
             <?php if ($conf && $f['stats_actualizadas']): ?><br><small class="text-muted" title="Última actualización de conteos"><?= h(substr($f['stats_actualizadas'], 5, 11)) ?></small><?php endif; ?></td>
-        <td><?php $dr = dias_restantes($f);
+        <td><?php if (!empty($f['es_demo'])) echo '<span class="badge text-bg-warning mb-1">DEMO</span><br>'; $dr = dias_restantes($f);
           if ($dr === null) echo '<span class="text-muted">Sin vencimiento</span>';
           elseif ($dr < 0) echo '<span class="badge text-bg-danger">Vencida</span><br><small class="text-muted">' . h(date('d-m-Y', strtotime($f['vence']))) . '</small>';
           else echo '<span class="' . ($dr <= 5 ? 'text-danger fw-semibold' : '') . '">' . h(date('d-m-Y', strtotime($f['vence']))) . '</span><br><small class="text-muted">' . ($dr === 0 ? 'vence hoy' : 'quedan ' . $dr . ' día' . ($dr === 1 ? '' : 's')) . '</small>'; ?></td>
@@ -220,7 +221,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
             <li><form method="POST"><?= csrf_campo() ?><input type="hidden" name="accion" value="recontar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button class="dropdown-item">↻ Actualizar conteos</button></form></li>
             <li><form method="POST"><?= csrf_campo() ?><input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button class="dropdown-item"><?= $f['estado'] === 'activa' ? '⏸️ Suspender' : '▶️ Reactivar' ?></button></form></li>
             <?php endif; ?>
-            <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#mVig" data-id="<?= (int)$f['id'] ?>" data-n="<?= h($f['nombre_colegio'] ?: $f['usuario']) ?>" data-v="<?= h($f['vence'] ? date('d-m-Y', strtotime($f['vence'])) : 'sin vencimiento') ?>">📅 Extender / reactivar vigencia</button></li>
+            <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#mVig" data-id="<?= (int)$f['id'] ?>" data-n="<?= h($f['nombre_colegio'] ?: $f['usuario']) ?>" data-v="<?= h($f['vence'] ? date('d-m-Y', strtotime($f['vence'])) : 'sin vencimiento') ?>" data-demo="<?= !empty($f['es_demo']) ? 1 : 0 ?>">📅 Extender / reactivar vigencia</button></li>
             <li><form method="POST" onsubmit="return confirm('Se generará una clave nueva y la anterior dejará de funcionar. ¿Continuar?')"><?= csrf_campo() ?><input type="hidden" name="accion" value="regenerar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button class="dropdown-item">🔑 Regenerar clave del admin</button></form></li>
             <li><hr class="dropdown-divider"></li>
             <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#mDel" data-id="<?= (int)$f['id'] ?>" data-c="<?= h($f['slug'] ?: $f['usuario']) ?>" data-bd="<?= h($f['db_name'] ?? '') ?>">🗑️ Eliminar…</button></li>
@@ -253,9 +254,10 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
 <div class="modal fade" id="mVig" tabindex="-1"><div class="modal-dialog"><form method="POST" class="modal-content"><?= csrf_campo() ?><input type="hidden" name="accion" value="vigencia"><input type="hidden" name="id" id="vig_id">
   <div class="modal-header"><h5 class="modal-title">Vigencia de <span id="vig_n"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body"><p class="small text-muted">Vencimiento actual: <strong id="vig_v"></strong></p>
-    <label class="form-label">Días a agregar</label><input type="number" min="1" max="3650" name="dias" id="vig_d" class="form-control mb-2" value="30">
+    <label class="form-label">Días a agregar <small class="text-muted">(0 = no cambiar la fecha)</small></label><input type="number" min="0" max="3650" name="dias" id="vig_d" class="form-control mb-2" value="30">
     <div class="small text-muted mb-3">Si aún está vigente, se suman al vencimiento actual. Si ya venció, se cuentan desde hoy y el colegio vuelve a quedar habilitado (sus datos no se pierden).</div>
-    <div class="form-check"><input class="form-check-input" type="checkbox" name="sin_vencimiento" value="1" id="vig_sv"><label class="form-check-label" for="vig_sv">Sin vencimiento (acceso indefinido)</label></div></div>
+    <div class="form-check"><input class="form-check-input" type="checkbox" name="sin_vencimiento" value="1" id="vig_sv"><label class="form-check-label" for="vig_sv">Sin vencimiento (acceso indefinido)</label></div>
+    <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="es_demo" value="1" id="vig_demo"><label class="form-check-label" for="vig_demo">Versión demo (mostrar aviso de prueba en el sitio)</label></div></div>
   <div class="modal-footer"><button class="btn btn-primary">Guardar</button></div></form></div></div>
 
 <!-- Modal eliminar -->
@@ -273,7 +275,7 @@ document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(b){
 });
 document.getElementById('mLim').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;
   lim_id.value=b.dataset.id;lim_mc.value=b.dataset.mc;lim_mu.value=b.dataset.mu;lim_n.textContent=b.dataset.n;});
-document.getElementById('mVig').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;vig_id.value=b.dataset.id;vig_n.textContent=b.dataset.n;vig_v.textContent=b.dataset.v;});
+document.getElementById('mVig').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;vig_id.value=b.dataset.id;vig_n.textContent=b.dataset.n;vig_v.textContent=b.dataset.v;vig_demo.checked=b.dataset.demo==='1';vig_sv.checked=false;});
 document.getElementById('mDel').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;
   del_id.value=b.dataset.id;del_c.textContent=b.dataset.c;del_bdtxt.textContent=b.dataset.bd?' y su base de datos «'+b.dataset.bd+'» (cursos, alumnos, puntos, todo)':'';});
 </script>

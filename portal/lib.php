@@ -22,6 +22,8 @@ function portal_migrar(mysqli $master): void {
   try {
     $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='vence'")->fetch_assoc();
     if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN vence DATETIME NULL AFTER max_usuarios");
+    $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='es_demo'")->fetch_assoc();
+    if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN es_demo TINYINT(1) NOT NULL DEFAULT 0 AFTER max_usuarios");
   } catch (Throwable $e) {}
 }
 // Fecha de vencimiento: fin del día, $dias días después de $desde (timestamp). 0 días → null (sin vencimiento).
@@ -117,6 +119,7 @@ function entrar_a_colegio(array $inst, mysqli $t, string $usuario): void {
   $m = $s->get_result()->fetch_assoc();
   if (!$m) throw new RuntimeException('No se encontró el usuario administrador dentro del colegio.');
   $_SESSION['maestro'] = $usuario; $_SESSION['id'] = (int)$m['id']; $_SESSION['rol'] = $m['rol']; $_SESSION['tenant'] = $inst['slug'];
+  $_SESSION['demo_aviso'] = 1;   // muestra el aviso de versión demo una vez al ingresar (si la instalación es demo)
   $GLOBALS['TENANT'] = $inst; $GLOBALS['CFG'] = brand_cargar($t);
   registrar_login($t, (int)$m['id'], $usuario);
 }

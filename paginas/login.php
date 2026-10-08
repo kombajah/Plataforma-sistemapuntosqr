@@ -15,6 +15,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       session_regenerate_id(true);
       $_SESSION['maestro'] = $r['usuario']; $_SESSION['id'] = $r['id']; $_SESSION['rol'] = $r['rol'];
       $_SESSION['tenant'] = $TENANT['slug'];
+      $_SESSION['demo_aviso'] = 1;   // el pie de página muestra el aviso de versión demo una vez, si corresponde
       login_ok($clave);
       registrar_login($conn, (int)$r['id'], $r['usuario']);
       header("Location: reporte.php"); exit;
