@@ -236,6 +236,10 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// Los menús "Acciones" se posicionan de forma fija para que la tabla (overflow) no los recorte
+document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(b){
+  new bootstrap.Dropdown(b,{popperConfig:function(c){return Object.assign({},c,{strategy:'fixed'});}});
+});
 document.getElementById('mLim').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;
   lim_id.value=b.dataset.id;lim_mc.value=b.dataset.mc;lim_mu.value=b.dataset.mu;lim_n.textContent=b.dataset.n;});
 document.getElementById('mDel').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;
