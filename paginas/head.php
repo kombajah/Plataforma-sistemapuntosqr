@@ -8,7 +8,9 @@
 
 body{background:var(--forest-bg);color:var(--forest-text);font-family:'Quicksand',system-ui,-apple-system,Segoe UI,sans-serif}
 .header-app{background:linear-gradient(135deg,var(--forest-primary-light),var(--forest-primary));color:var(--on-primary);padding:15px;border-radius:0 0 22px 22px;box-shadow:0 3px 10px #0001}
-.header-app a{color:var(--on-primary)!important}
+.header-app a:not(.menu-mas-item){color:var(--on-primary)!important}
+.header-app .menu-mas-item{color:var(--forest-text)!important}
+.header-app .menu-mas-item:hover{color:var(--forest-text)!important;background:var(--forest-bg)}
 .bg-light{background:var(--forest-bg)!important}
 .card{border:1px solid var(--forest-line);border-radius:16px}
 .text-primary{color:var(--forest-primary-dark)!important}
