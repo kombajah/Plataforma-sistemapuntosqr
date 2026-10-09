@@ -26,6 +26,17 @@ function solicitudes_asegurar_tabla(mysqli $master): void {
     estado ENUM('pendiente','contactado','descartado') NOT NULL DEFAULT 'pendiente',
     nota VARCHAR(500) NOT NULL DEFAULT '', ip VARCHAR(45) NULL, creada DATETIME NOT NULL, actualizada DATETIME NULL,
     gestionada_por VARCHAR(50) NULL, INDEX idx_sol_estado (estado, creada))");
+  $master->query("CREATE TABLE IF NOT EXISTS portal_solicitud_notas (
+    id INT AUTO_INCREMENT PRIMARY KEY, solicitud_id INT NOT NULL, tipo VARCHAR(10) NOT NULL DEFAULT 'nota',
+    autor VARCHAR(50) NOT NULL, texto VARCHAR(500) NOT NULL, creada DATETIME NOT NULL, INDEX idx_nota_sol (solicitud_id, creada))");
+}
+// Historial de notas: SIEMPRE se agrega una fila nueva; nunca se modifica ni reemplaza una anterior.
+function solicitud_agregar_nota(mysqli $master, int $solicitudId, string $autor, string $texto, string $tipo = 'nota'): void {
+  $texto = mb_substr(trim($texto), 0, 500);
+  if ($texto === '') return;
+  $f = ahora();
+  $s = $master->prepare("INSERT INTO portal_solicitud_notas (solicitud_id,tipo,autor,texto,creada) VALUES (?,?,?,?,?)");
+  $s->bind_param("issss", $solicitudId, $tipo, $autor, $texto, $f); $s->execute();
 }
 
 // ---- Captcha del formulario de solicitud ----

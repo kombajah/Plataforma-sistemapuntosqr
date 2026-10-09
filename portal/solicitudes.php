@@ -21,16 +21,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($a === 'estado') {
       $e = $_POST['estado'] ?? '';
       if (!in_array($e, ['pendiente', 'contactado', 'descartado'], true)) volver_sol($filtro, null, 'Estado no válido.');
+      $p = $master->prepare("SELECT estado FROM portal_solicitudes WHERE id=?"); $p->bind_param("i", $id); $p->execute();
+      $antes = $p->get_result()->fetch_assoc()['estado'] ?? '';
       $s = $master->prepare("UPDATE portal_solicitudes SET estado=?, actualizada=?, gestionada_por=? WHERE id=?");
       $s->bind_param("sssi", $e, $f, $yo, $id); $s->execute();
+      if ($antes !== $e) solicitud_agregar_nota($master, $id, $yo, 'Estado: ' . $antes . ' → ' . $e, 'evento');
       auditar($yo, 'solicitud_' . $e, 'ID ' . $id);
       volver_sol($filtro, 'Solicitud marcada como ' . $e . '.');
     } elseif ($a === 'nota') {
-      $n = mb_substr(trim($_POST['nota'] ?? ''), 0, 500);
-      $s = $master->prepare("UPDATE portal_solicitudes SET nota=?, actualizada=?, gestionada_por=? WHERE id=?");
-      $s->bind_param("sssi", $n, $f, $yo, $id); $s->execute();
-      volver_sol($filtro, 'Nota guardada.');
+      $n = trim($_POST['nota'] ?? '');
+      if ($n === '') volver_sol($filtro, null, 'Escribe el texto de la nota.');
+      solicitud_agregar_nota($master, $id, $yo, $n);   // se agrega al historial; no reemplaza notas anteriores
+      $s = $master->prepare("UPDATE portal_solicitudes SET actualizada=?, gestionada_por=? WHERE id=?");
+      $s->bind_param("ssi", $f, $yo, $id); $s->execute();
+      volver_sol($filtro, 'Nota agregada al historial.');
     } elseif ($a === 'eliminar') {
+      $s = $master->prepare("DELETE FROM portal_solicitud_notas WHERE solicitud_id=?"); $s->bind_param("i", $id); $s->execute();
       $s = $master->prepare("DELETE FROM portal_solicitudes WHERE id=?"); $s->bind_param("i", $id); $s->execute();
       auditar($yo, 'solicitud_eliminada', 'ID ' . $id);
       volver_sol($filtro, 'Solicitud eliminada.');
@@ -45,6 +51,11 @@ if ($filtro === 'todas') $filas = $master->query("SELECT * FROM portal_solicitud
 else {
   $s = $master->prepare("SELECT * FROM portal_solicitudes WHERE estado=? ORDER BY creada DESC LIMIT 300");
   $s->bind_param("s", $filtro); $s->execute(); $filas = $s->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+$notasPor = [];
+if ($filas) {
+  $ids = implode(',', array_map(fn($r) => (int)$r['id'], $filas));
+  foreach ($master->query("SELECT * FROM portal_solicitud_notas WHERE solicitud_id IN ($ids) ORDER BY creada ASC, id ASC") as $n) $notasPor[(int)$n['solicitud_id']][] = $n;
 }
 $badge = ['pendiente' => 'warning', 'contactado' => 'success', 'descartado' => 'secondary'];
 $tabs = ['pendiente' => 'Pendientes', 'contactado' => 'Contactados', 'descartado' => 'Descartados', 'todas' => 'Todas'];
@@ -71,7 +82,7 @@ $tabs = ['pendiente' => 'Pendientes', 'contactado' => 'Contactados', 'descartado
   </ul>
 
   <div class="pt-card p-3"><div class="table-responsive"><table class="table table-hover tabla mb-0">
-    <thead class="table-light"><tr><th>Recibida</th><th>Solicitante</th><th>Contacto</th><th>Mensaje</th><th>Estado y nota</th><th></th></tr></thead>
+    <thead class="table-light"><tr><th>Recibida</th><th>Solicitante</th><th>Contacto</th><th>Mensaje</th><th>Estado y notas</th><th></th></tr></thead>
     <tbody>
     <?php if (!$filas): ?><tr><td colspan="6" class="text-center text-muted py-4">No hay solicitudes en esta vista.</td></tr><?php endif; ?>
     <?php foreach ($filas as $r): $tel = preg_replace('/\D+/', '', $r['telefono']); ?>
@@ -84,8 +95,18 @@ $tabs = ['pendiente' => 'Pendientes', 'contactado' => 'Contactados', 'descartado
       <td>
         <span class="badge text-bg-<?= $badge[$r['estado']] ?>"><?= h($r['estado']) ?></span>
         <?php if ($r['gestionada_por']): ?><br><small class="text-muted"><?= h($r['gestionada_por']) ?> · <?= h(substr((string)$r['actualizada'], 0, 16)) ?></small><?php endif; ?>
-        <form method="POST" class="mt-2"><?= csrf_campo() ?><input type="hidden" name="accion" value="nota"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-          <div class="input-group input-group-sm"><input name="nota" class="form-control" maxlength="500" placeholder="Nota interna…" value="<?= h($r['nota']) ?>"><button class="btn btn-outline-secondary" title="Guardar nota">💾</button></div></form>
+        <div class="mt-2" style="min-width:260px;max-width:340px">
+          <?php if ($r['nota'] !== ''): ?>
+            <div class="small border-start border-2 ps-2 mb-1"><span class="text-muted">Nota anterior</span><br><?= nl2br(h($r['nota'])) ?></div>
+          <?php endif; ?>
+          <?php foreach ($notasPor[(int)$r['id']] ?? [] as $n): ?>
+            <div class="small border-start border-2 ps-2 mb-1 <?= $n['tipo'] === 'evento' ? 'text-muted fst-italic' : '' ?>" style="<?= $n['tipo'] === 'evento' ? '' : 'border-color:#3b6ea5!important' ?>">
+              <span class="text-muted"><?= h(substr($n['creada'], 0, 16)) ?> · <?= h($n['autor']) ?></span><br><?= nl2br(h($n['texto'])) ?></div>
+          <?php endforeach; ?>
+          <form method="POST" class="mt-2"><?= csrf_campo() ?><input type="hidden" name="accion" value="nota"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+            <textarea name="nota" class="form-control form-control-sm" rows="2" maxlength="500" required placeholder="Agregar una nota…"></textarea>
+            <button class="btn btn-sm btn-outline-secondary mt-1">➕ Agregar nota</button></form>
+        </div>
       </td>
       <td class="text-nowrap">
         <?php foreach (['contactado' => ['✅ Contactado', 'success'], 'pendiente' => ['⏳ Pendiente', 'warning'], 'descartado' => ['🚫 Descartar', 'secondary']] as $e => [$lbl, $cl]): if ($e === $r['estado']) continue; ?>

@@ -53,9 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $sid = (int)($_POST['solicitud_id'] ?? 0);   // si venía de una solicitud de acceso, se marca como contactada
       if ($sid > 0) {
         try {
-          $n = 'Administrador creado: ' . $usr; $fz = ahora();
-          $u = $master->prepare("UPDATE portal_solicitudes SET estado='contactado', nota=LEFT(CONCAT(IF(nota='','',CONCAT(nota,' | ')), ?),500), actualizada=?, gestionada_por=? WHERE id=?");
-          $u->bind_param("sssi", $n, $fz, $yo, $sid); $u->execute();
+          $fz = ahora();
+          $u = $master->prepare("UPDATE portal_solicitudes SET estado='contactado', actualizada=?, gestionada_por=? WHERE id=?");
+          $u->bind_param("ssi", $fz, $yo, $sid); $u->execute();
+          solicitud_agregar_nota($master, $sid, $yo, 'Se creó el administrador «' . $usr . '» y la solicitud pasó a contactado.', 'evento');
         } catch (Throwable $e) {}
       }
       volver();
