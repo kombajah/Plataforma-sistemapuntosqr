@@ -5,18 +5,7 @@ require_once __DIR__ . '/lib.php';
 
 if (($_SESSION['portal_rol'] ?? '') !== 'superadmin') { header('Location: /'); exit; }
 $yo = $_SESSION['portal_usuario']; $yoId = (int)$_SESSION['portal_id'];
-portal_migrar($master);   // agrega columnas/tablas nuevas si la BD es anterior
-$solPend = 0;
-try { $solPend = (int)$master->query("SELECT COUNT(*) t FROM portal_solicitudes WHERE estado='pendiente'")->fetch_assoc()['t']; } catch (Throwable $e) {}
-// Precarga del formulario «Nuevo administrador» desde una solicitud de acceso (?desde=ID)
-$pre = ['id' => 0, 'nombre' => '', 'email' => '', 'desc' => ''];
-if (isset($_GET['desde'])) {
-  $q = $master->prepare("SELECT * FROM portal_solicitudes WHERE id=?"); $did = (int)$_GET['desde']; $q->bind_param("i", $did); $q->execute();
-  if ($sr = $q->get_result()->fetch_assoc()) {
-    $d = 'Solicitud web: ' . $sr['institucion'] . ($sr['cargo'] ? ' · ' . $sr['cargo'] : '') . ($sr['telefono'] ? ' · ' . $sr['telefono'] : '');
-    $pre = ['id' => (int)$sr['id'], 'nombre' => $sr['nombre'], 'email' => $sr['email'], 'desc' => mb_substr($d, 0, 255)];
-  }
-}
+portal_migrar($master);   // agrega la columna de vigencia si la BD es anterior
 
 $flash = $_SESSION['flash'] ?? null; unset($_SESSION['flash']);
 $credenciales = $_SESSION['credenciales'] ?? null; unset($_SESSION['credenciales']);
@@ -36,7 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $usr = trim($_POST['usuario'] ?? '');
       $mc = max(0, (int)($_POST['max_cursos'] ?? 10)); $mu = max(0, (int)($_POST['max_usuarios'] ?? 20));
       $dias = min(3650, max(0, (int)($_POST['dias_vigencia'] ?? 0))); $vence = calcular_vence($dias); $demo = !empty($_POST['es_demo']) ? 1 : 0;
-      $desc = mb_substr(trim($_POST['descripcion'] ?? ''), 0, 255);
       if ($nom === '') volver(null, 'Escribe el nombre de la persona.');
       if (!usuario_valido($usr)) volver(null, 'Usuario no válido (3-50 caracteres: letras, números, . _ -).');
       if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) volver(null, 'Correo no válido.');
@@ -46,24 +34,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $clave = generar_clave(); $hash = password_hash($clave, PASSWORD_DEFAULT); $f = ahora();
       $s = $master->prepare("INSERT INTO portal_admins (nombre,email,usuario,password,creado,creado_por) VALUES (?,?,?,?,?,?)");
       $s->bind_param("ssssss", $nom, $email, $usr, $hash, $f, $yo); $s->execute(); $aid = (int)$master->insert_id;
-      $s = $master->prepare("INSERT INTO portal_instalaciones (admin_id,max_cursos,max_usuarios,vence,es_demo,descripcion,creada) VALUES (?,?,?,?,?,?,?)");
-      $s->bind_param("iiisiss", $aid, $mc, $mu, $vence, $demo, $desc, $f); $s->execute();
+      $s = $master->prepare("INSERT INTO portal_instalaciones (admin_id,max_cursos,max_usuarios,vence,es_demo,creada) VALUES (?,?,?,?,?,?)");
+      $s->bind_param("iiisis", $aid, $mc, $mu, $vence, $demo, $f); $s->execute();
       auditar($yo, 'admin_creado', "$usr ($nom) cursos=$mc usuarios=$mu vigencia=" . ($dias ? "$dias días" : 'sin vencimiento') . ($demo ? ' DEMO' : ''));
       $_SESSION['credenciales'] = ['usuario' => $usr, 'clave' => $clave, 'nombre' => $nom, 'nuevo' => true];
-      $sid = (int)($_POST['solicitud_id'] ?? 0);   // si venía de una solicitud de acceso, se marca como contactada
-      if ($sid > 0) {
-        try {
-          $n = 'Administrador creado: ' . $usr; $fz = ahora();
-          $u = $master->prepare("UPDATE portal_solicitudes SET estado='contactado', nota=LEFT(CONCAT(IF(nota='','',CONCAT(nota,' | ')), ?),500), actualizada=?, gestionada_por=? WHERE id=?");
-          $u->bind_param("sssi", $n, $fz, $yo, $sid); $u->execute();
-        } catch (Throwable $e) {}
-      }
       volver();
 
     } elseif ($a === 'limites') {
       $i = cargar_inst($master, (int)$_POST['id']); if (!$i) volver(null, 'Instalación no encontrada.');
       $mc = max(0, (int)$_POST['max_cursos']); $mu = max(0, (int)$_POST['max_usuarios']);
-      $s = $master->prepare("UPDATE portal_instalaciones SET max_cursos=?, max_usuarios=?, descripcion=? WHERE id=?"); $desc = mb_substr(trim($_POST['descripcion'] ?? ''), 0, 255); $s->bind_param("iisi", $mc, $mu, $desc, $i['id']); $s->execute();
+      $s = $master->prepare("UPDATE portal_instalaciones SET max_cursos=?, max_usuarios=? WHERE id=?"); $s->bind_param("iii", $mc, $mu, $i['id']); $s->execute();
       auditar($yo, 'limites', ($i['slug'] ?: $i['usuario']) . " cursos=$mc usuarios=$mu");
       volver('Límites actualizados.');
 
@@ -164,18 +144,11 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
 <div class="pt-brand py-3 mb-4"><div class="container d-flex flex-wrap justify-content-between align-items-center gap-2">
   <div><strong>🛡️ Panel superadmin</strong><div class="small opacity-75">Sesión: <?= h($yo) ?></div></div>
   <div class="d-flex gap-2">
-    <a href="solicitudes.php" class="btn btn-sm btn-warning">📨 Solicitudes<?= $solPend ? ' <span class="badge text-bg-dark">' . $solPend . '</span>' : '' ?></a>
     <button class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" data-bs-target="#miCuenta">🔒 Mi contraseña</button>
     <a href="salir.php" class="btn btn-sm btn-light">Salir</a></div></div></div>
 
 <div class="container pb-5">
   <?php if ($flash): ?><div class="alert alert-<?= $flash[0] === 'ok' ? 'success' : 'danger' ?>"><?= h($flash[1]) ?></div><?php endif; ?>
-
-  <?php if ($solPend && !$credenciales): ?>
-  <div class="alert alert-warning d-flex justify-content-between align-items-center py-2">
-    <span>📨 Tienes <strong><?= $solPend ?></strong> solicitud<?= $solPend === 1 ? '' : 'es' ?> de acceso pendiente<?= $solPend === 1 ? '' : 's' ?>.</span>
-    <a class="btn btn-sm btn-dark" href="solicitudes.php">Ver solicitudes</a></div>
-  <?php endif; ?>
 
   <?php if ($credenciales): ?>
   <div class="alert alert-warning border-warning">
@@ -200,14 +173,12 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
   </div>
 
   <div class="pt-card p-4 mb-4">
-    <h5 class="fw-bold" id="nuevoAdmin">➕ Nuevo administrador de colegio</h5>
-    <?php if ($pre['id']): ?><div class="alert alert-info py-2 small">Datos precargados desde la solicitud de acceso #<?= (int)$pre['id'] ?>. Al crear el administrador, la solicitud se marcará como «contactado».</div><?php endif; ?>
+    <h5 class="fw-bold">➕ Nuevo administrador de colegio</h5>
     <p class="text-muted small">Se genera una clave segura. Al ingresar por primera vez, la persona configurará su colegio (nombre, colores, mascota…) y se creará su base de datos.</p>
-    <form method="POST" class="row g-2" autocomplete="off"><?= csrf_campo() ?><input type="hidden" name="accion" value="nuevo_admin"><input type="hidden" name="solicitud_id" value="<?= (int)$pre['id'] ?>">
-      <div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre y apellido" required maxlength="100" value="<?= h($pre['nombre']) ?>"></div>
-      <div class="col-md-4"><input type="email" name="email" class="form-control" placeholder="Correo (opcional)" maxlength="150" value="<?= h($pre['email']) ?>"></div>
+    <form method="POST" class="row g-2" autocomplete="off"><?= csrf_campo() ?><input type="hidden" name="accion" value="nuevo_admin">
+      <div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre y apellido" required maxlength="100"></div>
+      <div class="col-md-4"><input type="email" name="email" class="form-control" placeholder="Correo (opcional)" maxlength="150"></div>
       <div class="col-md-4"><input name="usuario" class="form-control" placeholder="Usuario de acceso" required maxlength="50" pattern="[A-Za-z0-9._\-]{3,50}"></div>
-      <div class="col-12"><input name="descripcion" class="form-control" maxlength="255" placeholder="Descripción / referencia (opcional): ¿a quién se asigna? Ej: Profesora de Lenguaje, Escuela X, contacto por WhatsApp" value="<?= h($pre['desc']) ?>"></div>
       <div class="col-md-3"><label class="small text-muted">Máx. cursos (0 = sin límite)</label><input type="number" min="0" name="max_cursos" class="form-control" value="10"></div>
       <div class="col-md-3"><label class="small text-muted">Máx. usuarios (0 = sin límite)</label><input type="number" min="0" name="max_usuarios" class="form-control" value="20"></div>
       <div class="col-md-3"><label class="small text-muted">Vigencia en días (0 = sin vencimiento)</label><input type="number" min="0" max="3650" name="dias_vigencia" class="form-control" value="30"></div>
@@ -230,8 +201,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
         <td><?php if ($conf): ?><strong><?= h($f['nombre_colegio']) ?></strong><br><a class="mono" target="_blank" href="/e/<?= h($f['slug']) ?>/">/e/<?= h($f['slug']) ?>/</a>
             <?php else: ?><em class="text-muted">Sin configurar</em><br><small class="text-muted">creada <?= h(substr($f['creada'], 0, 10)) ?></small><?php endif; ?></td>
         <td><?= h($f['admin_nombre']) ?><br><span class="mono"><?= h($f['usuario']) ?></span><?php if ($f['email']): ?><br><small class="text-muted"><?= h($f['email']) ?></small><?php endif; ?>
-            <br><small class="text-muted">Últ. ingreso: <?= $f['admin_acceso'] ? h(substr($f['admin_acceso'], 0, 16)) : '—' ?></small>
-            <?php if (!empty($f['descripcion'])): ?><div class="small fst-italic mt-1" style="max-width:230px;color:#5a6b7d">📝 <?= h($f['descripcion']) ?></div><?php endif; ?></td>
+            <br><small class="text-muted">Últ. ingreso: <?= $f['admin_acceso'] ? h(substr($f['admin_acceso'], 0, 16)) : '—' ?></small></td>
         <td><?= $f['db_name'] ? '<span class="mono">' . h($f['db_name']) . '</span>' : '<span class="text-muted">—</span>' ?></td>
         <td><?= medidor($f['cursos_count'], $f['max_cursos']) ?></td>
         <td><?= medidor($f['usuarios_count'], $f['max_usuarios']) ?></td>
@@ -246,7 +216,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
         <td class="text-end text-nowrap">
           <div class="dropdown"><button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown">Acciones ▾</button>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#mLim" data-id="<?= (int)$f['id'] ?>" data-mc="<?= (int)$f['max_cursos'] ?>" data-mu="<?= (int)$f['max_usuarios'] ?>" data-desc="<?= h($f['descripcion'] ?? '') ?>" data-n="<?= h($f['nombre_colegio'] ?: $f['usuario']) ?>">📏 Editar límites y descripción</button></li>
+            <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#mLim" data-id="<?= (int)$f['id'] ?>" data-mc="<?= (int)$f['max_cursos'] ?>" data-mu="<?= (int)$f['max_usuarios'] ?>" data-n="<?= h($f['nombre_colegio'] ?: $f['usuario']) ?>">📏 Editar límites</button></li>
             <?php if ($conf): ?>
             <li><form method="POST"><?= csrf_campo() ?><input type="hidden" name="accion" value="recontar"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button class="dropdown-item">↻ Actualizar conteos</button></form></li>
             <li><form method="POST"><?= csrf_campo() ?><input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="<?= (int)$f['id'] ?>"><button class="dropdown-item"><?= $f['estado'] === 'activa' ? '⏸️ Suspender' : '▶️ Reactivar' ?></button></form></li>
@@ -274,10 +244,9 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
 
 <!-- Modal límites -->
 <div class="modal fade" id="mLim" tabindex="-1"><div class="modal-dialog"><form method="POST" class="modal-content"><?= csrf_campo() ?><input type="hidden" name="accion" value="limites"><input type="hidden" name="id" id="lim_id">
-  <div class="modal-header"><h5 class="modal-title">Límites y descripción de <span id="lim_n"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-header"><h5 class="modal-title">Límites de <span id="lim_n"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body"><label class="form-label">Máximo de cursos <small class="text-muted">(0 = sin límite)</small></label><input type="number" min="0" name="max_cursos" id="lim_mc" class="form-control mb-3">
-    <label class="form-label">Máximo de usuarios (docentes + administradores) <small class="text-muted">(0 = sin límite)</small></label><input type="number" min="0" name="max_usuarios" id="lim_mu" class="form-control mb-3">
-    <label class="form-label">Descripción / referencia <small class="text-muted">(solo la ve el superadmin)</small></label><textarea name="descripcion" id="lim_desc" class="form-control" rows="2" maxlength="255" placeholder="¿A quién se asignó este administrador?"></textarea>
+    <label class="form-label">Máximo de usuarios (docentes + administradores) <small class="text-muted">(0 = sin límite)</small></label><input type="number" min="0" name="max_usuarios" id="lim_mu" class="form-control">
     <p class="small text-muted mt-2 mb-0">Si el colegio ya supera el nuevo límite, conserva lo creado pero no podrá agregar más.</p></div>
   <div class="modal-footer"><button class="btn btn-primary">Guardar</button></div></form></div></div>
 
@@ -305,7 +274,7 @@ document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(b){
   new bootstrap.Dropdown(b,{popperConfig:function(c){return Object.assign({},c,{strategy:'fixed'});}});
 });
 document.getElementById('mLim').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;
-  lim_id.value=b.dataset.id;lim_mc.value=b.dataset.mc;lim_mu.value=b.dataset.mu;lim_desc.value=b.dataset.desc||'';lim_n.textContent=b.dataset.n;});
+  lim_id.value=b.dataset.id;lim_mc.value=b.dataset.mc;lim_mu.value=b.dataset.mu;lim_n.textContent=b.dataset.n;});
 document.getElementById('mVig').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;vig_id.value=b.dataset.id;vig_n.textContent=b.dataset.n;vig_v.textContent=b.dataset.v;vig_demo.checked=b.dataset.demo==='1';vig_sv.checked=false;});
 document.getElementById('mDel').addEventListener('show.bs.modal',function(e){var b=e.relatedTarget;
   del_id.value=b.dataset.id;del_c.textContent=b.dataset.c;del_bdtxt.textContent=b.dataset.bd?' y su base de datos «'+b.dataset.bd+'» (cursos, alumnos, puntos, todo)':'';});

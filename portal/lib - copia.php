@@ -17,67 +17,13 @@ function generar_clave(): string {
 function usuario_valido(string $u): bool { return (bool)preg_match('/^[A-Za-z0-9._-]{3,50}$/', $u); }
 function ahora(): string { return date('Y-m-d H:i:s'); }
 
-// Tabla de solicitudes de acceso (formulario público de la portada). Se crea si no existe.
-function solicitudes_asegurar_tabla(mysqli $master): void {
-  $master->query("CREATE TABLE IF NOT EXISTS portal_solicitudes (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL, email VARCHAR(150) NOT NULL, telefono VARCHAR(30) NOT NULL DEFAULT '',
-    institucion VARCHAR(150) NOT NULL, cargo VARCHAR(100) NOT NULL DEFAULT '', mensaje VARCHAR(1000) NOT NULL DEFAULT '',
-    estado ENUM('pendiente','contactado','descartado') NOT NULL DEFAULT 'pendiente',
-    nota VARCHAR(500) NOT NULL DEFAULT '', ip VARCHAR(45) NULL, creada DATETIME NOT NULL, actualizada DATETIME NULL,
-    gestionada_por VARCHAR(50) NULL, INDEX idx_sol_estado (estado, creada))");
-}
-
-// ---- Captcha del formulario de solicitud ----
-// Si hay claves de Cloudflare Turnstile (TURNSTILE_SITE_KEY y TURNSTILE_SECRET_KEY) se usa Turnstile;
-// si no, un desafío matemático propio guardado en la sesión. En ambos casos hay campo trampa, tiempo mínimo y límite por IP.
-function turnstile_activo(): bool { return env('TURNSTILE_SITE_KEY') !== '' && env('TURNSTILE_SECRET_KEY') !== ''; }
-function turnstile_verificar(string $token): bool {
-  if ($token === '' || strlen($token) > 2048) return false;
-  $post = http_build_query(['secret' => env('TURNSTILE_SECRET_KEY'), 'response' => $token, 'remoteip' => ip_cliente()]);
-  $url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'; $r = false;
-  if (function_exists('curl_init')) {
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $post, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8]);
-    $r = curl_exec($ch); curl_close($ch);
-  } else {
-    $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $post, 'timeout' => 8]]);
-    $r = @file_get_contents($url, false, $ctx);
-  }
-  $j = json_decode((string)$r, true);
-  return is_array($j) && !empty($j['success']);
-}
-function captcha_nuevo(): string {
-  $a = random_int(2, 9); $b = random_int(2, 9);
-  $_SESSION['cap'] = ['r' => $a + $b, 't' => time()];
-  return "$a + $b";
-}
-function captcha_validar(array $post): bool {
-  if (turnstile_activo()) return turnstile_verificar((string)($post['cf-turnstile-response'] ?? ''));
-  $c = $_SESSION['cap'] ?? null; unset($_SESSION['cap']);
-  $resp = trim((string)($post['captcha'] ?? ''));
-  return $c && $resp !== '' && (time() - $c['t']) <= 1800 && (int)$resp === (int)$c['r'];
-}
-// Máximo 5 envíos por hora desde la misma IP.
-function solicitud_limite(string $clave): bool {
-  global $master;
-  try {
-    $s = $master->prepare("SELECT COUNT(*) t FROM portal_intentos WHERE clave=? AND fecha > DATE_SUB(?, INTERVAL 1 HOUR)");
-    $ahora = date('Y-m-d H:i:s'); $s->bind_param("ss", $clave, $ahora); $s->execute();
-    return (int)$s->get_result()->fetch_assoc()['t'] >= 5;
-  } catch (Throwable $e) { return false; }
-}
-
 // Agrega columnas nuevas a una BD maestra ya instalada (seguro de repetir).
 function portal_migrar(mysqli $master): void {
-  try { solicitudes_asegurar_tabla($master); } catch (Throwable $e) {}
   try {
     $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='vence'")->fetch_assoc();
     if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN vence DATETIME NULL AFTER max_usuarios");
     $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='es_demo'")->fetch_assoc();
     if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN es_demo TINYINT(1) NOT NULL DEFAULT 0 AFTER max_usuarios");
-    $r = $master->query("SELECT COUNT(*) t FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='portal_instalaciones' AND column_name='descripcion'")->fetch_assoc();
-    if (!(int)$r['t']) $master->query("ALTER TABLE portal_instalaciones ADD COLUMN descripcion VARCHAR(255) NULL AFTER max_usuarios");
   } catch (Throwable $e) {}
 }
 // Fecha de vencimiento: fin del día, $dias días después de $desde (timestamp). 0 días → null (sin vencimiento).

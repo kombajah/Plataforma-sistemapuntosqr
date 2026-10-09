@@ -56,7 +56,7 @@ if (preg_match('#^/e/([a-z0-9][a-z0-9-]{1,28}[a-z0-9])(/.*)?$#', $ruta, $m)) {
 // ======================= PORTAL =======================
 $pagina = basename($ruta);
 $rutasPortal = ['' => 'home.php', 'index.php' => 'home.php', 'superadmin.php' => 'superadmin.php',
-                'setup.php' => 'setup.php', 'instalar.php' => 'instalar.php', 'salir.php' => 'salir.php'];
+                'setup.php' => 'setup.php', 'instalar.php' => 'instalar.php', 'salir.php' => 'salir.php', 'solicitudes.php' => 'solicitudes.php'];
 if (!isset($rutasPortal[$pagina])) pagina_mensaje('Página no encontrada', 'La página solicitada no existe.', 404);
 
 if ($pagina !== 'instalar.php') {

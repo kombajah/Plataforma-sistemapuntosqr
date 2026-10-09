@@ -71,6 +71,47 @@ if (($_POST['tipo'] ?? '') === 'admin') {
     if (!$error) { login_fallido($clave); $error = 'Usuario o clave incorrectos.'; }
   }
 }
+// ---- Solicitud de acceso (formulario público) ----
+$solOk = !empty($_SESSION['sol_ok']); unset($_SESSION['sol_ok']);
+$solErr = '';
+$solDatos = ['nombre' => '', 'email' => '', 'telefono' => '', 'institucion' => '', 'cargo' => '', 'mensaje' => ''];
+if (($_POST['tipo'] ?? '') === 'solicitud') {
+  csrf_validar();
+  $lim = ['nombre' => 100, 'email' => 150, 'telefono' => 30, 'institucion' => 150, 'cargo' => 100, 'mensaje' => 1000];
+  foreach ($lim as $k => $max) $solDatos[$k] = mb_substr(trim((string)($_POST[$k] ?? '')), 0, $max);
+  $ipSol = ip_cliente(); $claveSol = 'sol:' . $ipSol;
+  $t0 = (int)($_SESSION['sol_t'] ?? 0);
+
+  if (!empty($_POST['web'])) {                      // campo trampa para bots: se finge éxito y no se guarda nada
+    $_SESSION['sol_ok'] = 1; header('Location: /'); exit;
+  }
+  if (solicitud_limite($claveSol)) {
+    $solErr = 'Has enviado varias solicitudes en poco tiempo. Inténtalo de nuevo más tarde.';
+  } else {
+    login_fallido($claveSol);                       // cuenta el intento para el límite por IP
+    if ($solDatos['nombre'] === '' || $solDatos['institucion'] === '') $solErr = 'Completa tu nombre y el nombre de tu institución.';
+    elseif (!filter_var($solDatos['email'], FILTER_VALIDATE_EMAIL)) $solErr = 'Escribe un correo electrónico válido.';
+    elseif ($solDatos['telefono'] !== '' && !preg_match('/^[0-9+\s().-]{7,25}$/', $solDatos['telefono'])) $solErr = 'El teléfono no es válido (solo números, +, espacios y guiones).';
+    elseif ($t0 && time() - $t0 < 3) $solErr = 'Envío demasiado rápido. Inténtalo nuevamente.';
+    elseif (!captcha_validar($_POST)) $solErr = 'La verificación no es correcta. Inténtalo de nuevo.';
+    else {
+      try {
+        solicitudes_asegurar_tabla($master);
+        $q = $master->prepare("SELECT id FROM portal_solicitudes WHERE email=? AND estado='pendiente' LIMIT 1");
+        $q->bind_param("s", $solDatos['email']); $q->execute();
+        if (!$q->get_result()->fetch_assoc()) {      // si ya hay una pendiente con ese correo, no se duplica (igual se agradece)
+          $f = ahora();
+          $i = $master->prepare("INSERT INTO portal_solicitudes (nombre,email,telefono,institucion,cargo,mensaje,ip,creada) VALUES (?,?,?,?,?,?,?,?)");
+          $i->bind_param("ssssssss", $solDatos['nombre'], $solDatos['email'], $solDatos['telefono'], $solDatos['institucion'], $solDatos['cargo'], $solDatos['mensaje'], $ipSol, $f);
+          $i->execute();
+        }
+        $_SESSION['sol_ok'] = 1; header('Location: /'); exit;
+      } catch (Throwable $e) { $solErr = 'No pudimos registrar tu solicitud en este momento. Inténtalo más tarde.'; }
+    }
+  }
+}
+$capPregunta = turnstile_activo() ? null : captcha_nuevo();
+$_SESSION['sol_t'] = time();
 $portal = env('PORTAL_NOMBRE', 'Portal Sistema de Puntos');
 ?>
 <!DOCTYPE html><html lang="es"><head><?php portal_head($portal); ?></head>
@@ -97,4 +138,36 @@ $portal = env('PORTAL_NOMBRE', 'Portal Sistema de Puntos');
         <button class="btn btn-outline-primary w-100">Ir a mi colegio</button></form>
     </div></div>
   </div>
+
+  <div class="row g-3 mt-1"><div class="col-12"><div class="pt-card p-4" id="solicitar">
+    <?php if ($solOk): ?>
+      <div class="alert alert-success mb-0">✅ <strong>¡Gracias!</strong> Hemos recibido tu solicitud. Nos pondremos en contacto contigo a la brevedad.</div>
+    <?php else: ?>
+    <details <?= $solErr ? 'open' : '' ?>>
+      <summary class="fw-bold fs-5" style="cursor:pointer">📨 ¿Aún no tienes acceso? Solicítalo aquí</summary>
+      <p class="text-muted small mt-2">Déjanos tus datos y nos pondremos en contacto contigo para habilitar tu acceso.</p>
+      <?php if ($solErr): ?><div class="alert alert-danger py-2"><?= h($solErr) ?></div><?php endif; ?>
+      <form method="POST" class="row g-2" autocomplete="off"><?= csrf_campo() ?><input type="hidden" name="tipo" value="solicitud">
+        <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true"><label>No completar este campo<input type="text" name="web" tabindex="-1" autocomplete="off"></label></div>
+        <div class="col-md-6"><label class="form-label small mb-1">Nombre y apellido *</label><input name="nombre" class="form-control" required maxlength="100" value="<?= h($solDatos['nombre']) ?>"></div>
+        <div class="col-md-6"><label class="form-label small mb-1">Correo electrónico *</label><input type="email" name="email" class="form-control" required maxlength="150" value="<?= h($solDatos['email']) ?>"></div>
+        <div class="col-md-6"><label class="form-label small mb-1">Teléfono / WhatsApp</label><input name="telefono" class="form-control" maxlength="30" placeholder="+56 9 1234 5678" value="<?= h($solDatos['telefono']) ?>"></div>
+        <div class="col-md-6"><label class="form-label small mb-1">Colegio o institución *</label><input name="institucion" class="form-control" required maxlength="150" value="<?= h($solDatos['institucion']) ?>"></div>
+        <div class="col-md-6"><label class="form-label small mb-1">Cargo</label><input name="cargo" class="form-control" maxlength="100" placeholder="Ej: Profesor, Director" value="<?= h($solDatos['cargo']) ?>"></div>
+        <div class="col-12"><label class="form-label small mb-1">Mensaje (opcional)</label><textarea name="mensaje" class="form-control" rows="2" maxlength="1000"><?= h($solDatos['mensaje']) ?></textarea></div>
+        <div class="col-md-6">
+          <?php if ($capPregunta === null): ?>
+            <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+            <div class="cf-turnstile" data-sitekey="<?= h(env('TURNSTILE_SITE_KEY')) ?>"></div>
+          <?php else: ?>
+            <label class="form-label small mb-1">Verificación: ¿cuánto es <strong><?= h($capPregunta) ?></strong>? *</label>
+            <input name="captcha" class="form-control" inputmode="numeric" required maxlength="3" style="max-width:120px">
+          <?php endif; ?>
+        </div>
+        <div class="col-md-6 d-flex align-items-end justify-content-md-end"><button class="btn btn-primary px-4">Enviar solicitud</button></div>
+        <p class="small text-muted mb-0">Usaremos tus datos solo para contactarte por esta solicitud.</p>
+      </form>
+    </details>
+    <?php endif; ?>
+  </div></div></div>
 </div></body></html>

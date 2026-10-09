@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS portal_instalaciones (
   estado ENUM('pendiente','activa','suspendida') NOT NULL DEFAULT 'pendiente',
   max_cursos INT NOT NULL DEFAULT 10,      -- 0 = sin límite
   max_usuarios INT NOT NULL DEFAULT 20,    -- docentes + administradores; 0 = sin límite
+  descripcion VARCHAR(255) NULL,           -- nota interna del superadmin sobre a quién se asignó (no la ve el colegio)
   es_demo TINYINT(1) NOT NULL DEFAULT 0,   -- 1 = versión demo/prueba (muestra aviso en el sitio)
   vence DATETIME NULL,                     -- fin de la vigencia (prueba); NULL = sin vencimiento
   cursos_count INT NOT NULL DEFAULT 0,
@@ -64,4 +65,21 @@ CREATE TABLE IF NOT EXISTS portal_auditoria (
   actor VARCHAR(50) NOT NULL,
   accion VARCHAR(50) NOT NULL,
   detalle VARCHAR(255) NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS portal_solicitudes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  email VARCHAR(150) NOT NULL,
+  telefono VARCHAR(30) NOT NULL DEFAULT '',
+  institucion VARCHAR(150) NOT NULL,
+  cargo VARCHAR(100) NOT NULL DEFAULT '',
+  mensaje VARCHAR(1000) NOT NULL DEFAULT '',
+  estado ENUM('pendiente','contactado','descartado') NOT NULL DEFAULT 'pendiente',
+  nota VARCHAR(500) NOT NULL DEFAULT '',
+  ip VARCHAR(45) NULL,
+  creada DATETIME NOT NULL,
+  actualizada DATETIME NULL,
+  gestionada_por VARCHAR(50) NULL,
+  INDEX idx_sol_estado (estado, creada)
 );

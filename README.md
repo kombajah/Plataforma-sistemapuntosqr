@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Portal Sistema de Puntos NFC/QR — multi-colegio
 
 Versión genérica (sin marca de ningún colegio) del sistema de puntos por asignatura/curso con NFC o QR.
@@ -19,11 +18,18 @@ Imágenes y configuración se guardan **en la BD del colegio** (tablas `config` 
 ## Arranque rápido (Vercel + Aiven/MySQL)
 1. Crea una BD MySQL vacía para el portal (ej. `defaultdb` en Aiven). El usuario debe poder **crear bases de datos** (Aiven `avnadmin` puede).
 2. Variables de entorno en Vercel: `DB_HOST`, `DB_PORT`, `DB_NAME` (BD maestra), `DB_USER`, `DB_PASS`, **`INSTALL_KEY`** (frase secreta larga).
-   Opcionales: `TENANT_DB_PREFIX` (def. `nfc_`), `PORTAL_NOMBRE`, `DB_SSL=0` (solo MySQL local sin SSL).
+   Opcionales: `TENANT_DB_PREFIX` (def. `nfc_`), `PORTAL_NOMBRE`, `DB_SSL=0` (solo MySQL local sin SSL),
+   `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` (captcha de Cloudflare para el formulario de solicitud; si no se definen se usa un captcha matemático propio).
 3. Despliega y abre `https://TU-DOMINIO/instalar.php`: escribe `INSTALL_KEY` y crea el **primer superadmin**. Luego puedes quitar `INSTALL_KEY`.
 4. Entra en `/`, ve al panel, crea un administrador y entrégale la dirección, el usuario y la clave que se muestra (solo se ve una vez).
 
 Local: copia `config.local.example.php` a `config.local.php`.
+
+## Solicitudes de acceso
+La portada incluye el formulario «¿Aún no tienes acceso? Solicítalo aquí» (nombre, correo, teléfono, institución, cargo y mensaje).
+Protecciones: captcha (Turnstile o matemático), campo trampa, tiempo mínimo y máximo 5 envíos por hora por IP.
+El superadmin las gestiona en `/solicitudes.php` (estados: pendiente, contactado, descartado; notas internas; botón para crear
+el administrador con los datos precargados). No se envían correos automáticos: el panel muestra el contador de pendientes.
 
 ## Límites por instalación
 Los fija el superadmin al crear al administrador y puede cambiarlos cuando quiera: **máx. cursos** y **máx. usuarios** (docentes + admins); `0` = sin límite.
@@ -42,7 +48,3 @@ Se validan en el servidor (crear curso, carga masiva CSV, crear maestro). Los co
 - Eliminar una instalación desde el panel ejecuta `DROP DATABASE` (pide escribir el código para confirmar).
 - Los QR de apoderados llevan el código del colegio en la URL (`/e/{codigo}/reporte_apoderado.php?token=…`).
 - Intentos de login: bloqueo de 15 min tras 8 fallos (por usuario + IP) en portal y colegios.
-=======
-# Plataforma-sistemapuntosqr
-Portal multiescuela con configuración dinámica
->>>>>>> 45f7da7f616261605fdda9258f6f8149732bb046
