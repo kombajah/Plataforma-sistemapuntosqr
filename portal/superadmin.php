@@ -209,9 +209,9 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
       <div class="col-md-4"><input type="email" name="email" class="form-control" placeholder="Correo (opcional)" maxlength="150" value="<?= h($pre['email']) ?>"></div>
       <div class="col-md-4"><input name="usuario" class="form-control" placeholder="Usuario de acceso" required maxlength="50" pattern="[A-Za-z0-9._\-]{3,50}"></div>
       <div class="col-12"><input name="descripcion" class="form-control" maxlength="255" placeholder="Descripción / referencia (opcional): ¿a quién se asigna? Ej: Profesora de Lenguaje, Escuela X, contacto por WhatsApp" value="<?= h($pre['desc']) ?>"></div>
-      <div class="col-md-3"><label class="small text-muted">Máx. cursos (0 = sin límite)</label><input type="number" min="0" name="max_cursos" class="form-control" value="10"></div>
-      <div class="col-md-3"><label class="small text-muted">Máx. usuarios (0 = sin límite)</label><input type="number" min="0" name="max_usuarios" class="form-control" value="20"></div>
-      <div class="col-md-3"><label class="small text-muted">Vigencia en días (0 = sin vencimiento)</label><input type="number" min="0" max="3650" name="dias_vigencia" class="form-control" value="30"></div>
+      <div class="col-md-3"><label class="small text-muted">Máx. cursos (0 = sin límite)</label><input type="number" min="0" name="max_cursos" class="form-control" value="1"></div>
+      <div class="col-md-3"><label class="small text-muted">Máx. usuarios (0 = sin límite)</label><input type="number" min="0" name="max_usuarios" class="form-control" value="2"></div>
+      <div class="col-md-3"><label class="small text-muted">Vigencia en días (0 = sin vencimiento)</label><input type="number" min="0" max="3650" name="dias_vigencia" class="form-control" value="15"></div>
       <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100">Crear y generar clave</button></div>
       <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="es_demo" value="1" id="nuevo_demo"><label class="form-check-label" for="nuevo_demo"><strong>Versión demo</strong> <span class="text-muted small">— el sitio mostrará un aviso de «versión de prueba» con los días de vigencia que quedan (en el pie de página y en una ventana al iniciar sesión).</span></label></div></div>
     </form>
