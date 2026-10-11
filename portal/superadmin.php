@@ -218,8 +218,17 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
   </div>
 
   <div class="pt-card p-3 mb-4">
-    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h5 class="fw-bold mb-0">🏫 Instalaciones</h5>
+
+      <!-- Botones de filtro de estado -->
+      <div class="btn-group btn-group-sm" role="group" id="filtroEstado">
+        <button type="button" class="btn btn-primary active" onclick="filtrarTabla('todas', this)">Todas (<?= $tot['inst'] ?>)</button>
+        <button type="button" class="btn btn-outline-primary" onclick="filtrarTabla('activa', this)">Activas (<?= $tot['act'] ?>)</button>
+        <button type="button" class="btn btn-outline-primary" onclick="filtrarTabla('pendiente', this)">Pendientes (<?= $tot['pend'] ?>)</button>
+        <button type="button" class="btn btn-outline-primary" onclick="filtrarTabla('suspendida', this)">Suspendidas (<?= $tot['sus'] ?>)</button>
+      </div>
+
       <form method="POST"><?= csrf_campo() ?><input type="hidden" name="accion" value="recontar_todo"><button class="btn btn-sm btn-outline-secondary">↻ Actualizar todos los conteos</button></form>
     </div>
     <div class="table-responsive"><table class="table table-hover tabla mb-0">
@@ -227,7 +236,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
       <tbody>
       <?php if (!$filas): ?><tr><td colspan="10" class="text-center text-muted py-4">Aún no hay instalaciones. Crea el primer administrador arriba.</td></tr><?php endif; ?>
       <?php foreach ($filas as $f): $conf = $f['estado'] !== 'pendiente'; ?>
-      <tr>
+      <tr data-estado="<?= h($f['estado']) ?>">
         <td><?php if ($conf): ?><strong><?= h($f['nombre_colegio']) ?></strong><br><a class="mono" target="_blank" href="/e/<?= h($f['slug']) ?>/">/e/<?= h($f['slug']) ?>/</a>
             <?php else: ?><em class="text-muted">Sin configurar</em><br><small class="text-muted">creada <?= h(substr($f['creada'], 0, 10)) ?></small><?php endif; ?></td>
         <td><?= h($f['admin_nombre']) ?><br><span class="mono"><?= h($f['usuario']) ?></span><?php if ($f['email']): ?><br><small class="text-muted"><?= h($f['email']) ?></small><?php endif; ?>
@@ -301,6 +310,25 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// Filtrado rápido por estado (Todas / Activas / Pendientes / Suspendidas)
+function filtrarTabla(estado, btn) {
+  document.querySelectorAll('#filtroEstado .btn').forEach(function(b) {
+    b.classList.remove('btn-primary', 'active');
+    b.classList.add('btn-outline-primary');
+  });
+  btn.classList.remove('btn-outline-primary');
+  btn.classList.add('btn-primary', 'active');
+
+  var filas = document.querySelectorAll('.tabla tbody tr[data-estado]');
+  filas.forEach(function(tr) {
+    if (estado === 'todas' || tr.dataset.estado === estado) {
+      tr.style.display = '';
+    } else {
+      tr.style.display = 'none';
+    }
+  });
+}
+
 // Los menús "Acciones" se posicionan de forma fija para que la tabla (overflow) no los recorte
 document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(b){
   new bootstrap.Dropdown(b,{popperConfig:function(c){return Object.assign({},c,{strategy:'fixed'});}});
