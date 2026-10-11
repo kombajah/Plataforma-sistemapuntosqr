@@ -286,7 +286,7 @@ $badge = ['activa' => 'success', 'pendiente' => 'secondary', 'suspendida' => 'da
 <div class="modal fade" id="mVig" tabindex="-1"><div class="modal-dialog"><form method="POST" class="modal-content"><?= csrf_campo() ?><input type="hidden" name="accion" value="vigencia"><input type="hidden" name="id" id="vig_id">
   <div class="modal-header"><h5 class="modal-title">Vigencia de <span id="vig_n"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body"><p class="small text-muted">Vencimiento actual: <strong id="vig_v"></strong></p>
-    <label class="form-label">Días a agregar <small class="text-muted">(0 = no cambiar la fecha)</small></label><input type="number" min="0" max="3650" name="dias" id="vig_d" class="form-control mb-2" value="30">
+    <label class="form-label">Días a agregar <small class="text-muted">(0 = no cambiar la fecha)</small></label><input type="number" min="0" max="3650" name="dias" id="vig_d" class="form-control mb-2" value="0">
     <div class="small text-muted mb-3">Si aún está vigente, se suman al vencimiento actual. Si ya venció, se cuentan desde hoy y el colegio vuelve a quedar habilitado (sus datos no se pierden).</div>
     <div class="form-check"><input class="form-check-input" type="checkbox" name="sin_vencimiento" value="1" id="vig_sv"><label class="form-check-label" for="vig_sv">Sin vencimiento (acceso indefinido)</label></div>
     <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="es_demo" value="1" id="vig_demo"><label class="form-check-label" for="vig_demo">Versión demo (mostrar aviso de prueba en el sitio)</label></div></div>
